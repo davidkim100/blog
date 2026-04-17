@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>David's Blog</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <a href="https://davidkim100.github.io/blog/" class="blog-title">David's Blog</a>
+      <div class="header-actions">
+        <button onclick="newPost()" class="btn btn-primary">+ New Post</button>
+      </div>
+    </header>
+
+    <main id="main">
+      <div id="drafts-section"></div>
+      <div id="posts-list"></div>
+    </main>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const postsList = document.getElementById('posts-list');
+
+    function formatDate(iso) {
+      return new Date(iso).toLocaleDateString('en-US', {
+        year: 'numeric', month: 'long', day: 'numeric'
+      });
+    }
+
+    function renderTags(tags) {
+      if (!tags || !tags.trim()) return '';
+      return `<div class="tags">${tags.split(',').map(t => `<span class="tag">${t.trim()}</span>`).join('')}</div>`;
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    async function loadPosts() {
+      postsList.innerHTML = '<p style="color:var(--text-muted);padding:2rem 0">Loading…</p>';
+      try {
+        const res = await fetch('/api/posts');
+        const posts = await res.json();
+
+        if (posts.length === 0) {
+          postsList.innerHTML = `
+            <div class="empty-state">
+              <p>No posts yet.</p>
+              <button onclick="newPost()" class="btn btn-primary">Write your first post</button>
+            </div>`;
+          return;
+        }
+
+        postsList.innerHTML = `<div class="posts-list">${posts.map(p => `
+          <article class="post-card">
+            <div class="post-card-meta">${formatDate(p.date)}${p.updated ? ' · edited' : ''}</div>
+            <h2 class="post-card-title"><a href="post.html?slug=${escapeHtml(p.slug)}">${escapeHtml(p.title)}</a></h2>
+            ${renderTags(p.tags)}
+            <div class="post-card-actions">
+              <a href="post.html?slug=${escapeHtml(p.slug)}" class="btn btn-ghost btn-sm">Read</a>
+              <a href="editor.html?slug=${escapeHtml(p.slug)}" class="btn btn-ghost btn-sm">Edit</a>
+              <button onclick="deletePost(this.dataset.slug, this.dataset.title)" data-slug="${escapeHtml(p.slug)}" data-title="${escapeHtml(p.title)}" class="btn btn-danger btn-sm">Delete</button>
+            </div>
+          </article>`).join('')}</div>`;
+      } catch (err) {
+        postsList.innerHTML = `<p style="color:var(--danger)">Failed to load posts: ${err.message}</p>`;
+      }
+    }
+
+    async function deletePost(slug, title) {
+      if (!confirm(`Delete "${title}"?\n\nThis cannot be undone.`)) return;
+      try {
+        const res = await fetch(`/api/posts/${slug}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error((await res.json()).error);
+        showToast('Post deleted', 'success');
+        loadPosts();
+      } catch (err) {
+        showToast('Delete failed: ' + err.message, 'error');
+      }
+    }
+
+    function showToast(msg, type = '') {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = 'toast' + (type ? ' ' + type : '') + ' show';
+      setTimeout(() => { t.className = 'toast'; }, 2800);
+    }
+
+    async function loadDrafts() {
+      const section = document.getElementById('drafts-section');
+      try {
+        const res = await fetch('/api/drafts');
+        const drafts = await res.json();
+        if (!drafts.length) { section.innerHTML = ''; return; }
+        section.innerHTML = `
+          <div style="margin-bottom:2rem">
+            <h3 style="font-size:0.78rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:0.75rem">Drafts</h3>
+            <div class="posts-list">${drafts.map(d => {
+              const editUrl = d.id.startsWith('edit-')
+                ? `editor.html?slug=${escapeHtml(d.id.slice(5))}`
+                : `editor.html?draft=${escapeHtml(d.id)}`;
+              return `
+              <article class="post-card" style="opacity:0.8">
+                <div class="post-card-meta">Last saved ${new Date(d.savedAt).toLocaleString()}</div>
+                <h2 class="post-card-title"><a href="${editUrl}">${escapeHtml(d.title || 'Untitled')}</a></h2>
+                <div class="post-card-actions">
+                  <a href="${editUrl}" class="btn btn-ghost btn-sm">Continue writing</a>
+                  <button onclick="deleteDraft('${escapeHtml(d.id)}')" class="btn btn-danger btn-sm">Discard</button>
+                </div>
+              </article>`;
+            }).join('')}</div>
+          </div>`;
+      } catch (e) {}
+    }
+
+    async function deleteDraft(id) {
+      if (!confirm('Discard this draft?')) return;
+      try {
+        await fetch(`/api/drafts/${id}`, { method: 'DELETE' });
+        loadDrafts();
+      } catch (err) {
+        showToast('Failed to discard draft: ' + err.message, 'error');
+      }
+    }
+
+    function newPost() {
+      location.href = `editor.html?draft=draft-${Date.now()}`;
+    }
+
+    loadDrafts();
+    loadPosts();
+  </script>
+</body>
+</html>
