@@ -1,1 +1,1 @@
-https://davidkim100.github.io/blog/
+https://davidkim100.github.io/blog/index.html
